@@ -6,6 +6,10 @@
 #include <optional>
 #include <fstream>
 #include <sstream>
+#include <cstdlib>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 enum Instruction
 {
@@ -131,7 +135,12 @@ std::vector<std::string> asm_loop(const std::string &label, const std::string &j
         "test r10b, r10b",
         "jz " + jmpTo};
 }
-std::string asm_jmp(const std::string &label) { return "jmp " + label; }
+std::vector<std::string> asm_jmp(const std::string &label, const std::string &jmpTo)
+{
+    return {
+        "jmp " + jmpTo,
+        label + ":"};
+}
 
 std::string int_to_label(int n)
 {
@@ -200,7 +209,9 @@ std::vector<std::string> assembly(const std::vector<Command> &cmds)
                              int_to_label(cmd.jumpTo)));
             break;
         case JMP:
-            asms.push_back(asm_jmp(int_to_label(cmd.jumpTo)));
+            extend(asms, asm_jmp(
+                             int_to_label(i),
+                             int_to_label(cmd.jumpTo)));
             break;
         }
     }
@@ -268,8 +279,12 @@ int main(int argc, char **argv)
     const auto program = buildProgram(insts);
     const auto asmcode = assembly(program);
 
-    std::ofstream out("out.asm");
-    if (!out.is_open()) {
+    const auto asmName = std::string(argv[1]) + "_out.asm.tmp";
+    const auto objName = std::string(argv[1]) + "_obj.o";
+
+    std::ofstream out(asmName);
+    if (!out.is_open())
+    {
         std::cerr << "could not open out.asm" << std::endl;
         return 1;
     }
@@ -278,5 +293,26 @@ int main(int argc, char **argv)
     {
         out << sasm << std::endl;
     }
+
+    const auto nasmCmd = "nasm -felf64 -o \"" + objName + "\" \"" + asmName + "\"";
+    std::cout << nasmCmd << std::endl;
+    int nasmCode = system(nasmCmd.c_str());
+    if (nasmCode != 0) {
+        std::cerr << "NASM failed." << std::endl;
+        return 1;
+    }
+
+    const auto ldCmd = "ld \"" + objName + "\"";
+    std::cout << ldCmd << std::endl;
+    int ldCode = system(ldCmd.c_str());
+    if (ldCode != 0) {
+        std::cerr << "ld failed." << std::endl;
+        return 1;
+    }
+
+    // remove temporary files
+    fs::remove(asmName);
+    fs::remove(objName);
+
     return 0;
 }
